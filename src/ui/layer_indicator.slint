@@ -1,0 +1,46 @@
+export component LayerIndicatorView inherits Window {
+    width: 104px;
+    height: 104px;
+    background: transparent;
+    no-frame: true;
+    always-on-top: true;
+    title: "QMK Layer Indicator";
+
+    in-out property <string> layer-label: "";
+    in-out property <bool> active: false;
+    property <float> visibility: active ? 1.0 : 0.0;
+    animate visibility {
+        duration: 120ms;
+        easing: ease-out;
+    }
+
+    panel := Rectangle {
+        property <float> scale: 0.9 + (0.1 * root.visibility);
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: parent.width * scale;
+        height: parent.height * scale;
+        background: #121214;
+        border-radius: 22px * scale;
+        opacity: root.visibility * (hover-area.has-hover ? 0.5 : 0.25);
+    }
+
+    Text {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        text: root.layer-label;
+        color: white;
+        font-size: 48px * panel.scale;
+        font-weight: 400;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        opacity: root.visibility * (hover-area.has-hover ? 1.0 : 0.85);
+    }
+
+    hover-area := TouchArea {
+        width: parent.width;
+        height: parent.height;
+    }
+}
