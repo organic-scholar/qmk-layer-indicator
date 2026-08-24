@@ -77,6 +77,7 @@ impl LayerIndicator {
         let window = self.view.clone();
         let _ = slint::invoke_from_event_loop(move || {
             if let Some(window) = window.upgrade() {
+                super::backend::position_bottom_center(&window);
                 if let Some(label) = label {
                     window.set_layer_label(label.into());
                 }
