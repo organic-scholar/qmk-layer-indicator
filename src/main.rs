@@ -1,32 +1,38 @@
 use std::sync::Arc;
 
-use slint::ComponentHandle;
-
 mod config;
 mod qmk;
 mod tray;
 mod ui;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    ui::configure_backend()?;
-
-    let view = ui::LayerIndicatorView::new()?;
-    let layer_indicator = ui::LayerIndicator::new(&view, config::Settings::load());
-
-    let _console_reader = qmk::start_console_reader({
-        let controller = layer_indicator.clone();
-        move |event| controller.handle_qmk_event(event)
-    });
-    let _tray_icon = match tray::create(Arc::new({
-        let controller = layer_indicator.clone();
-        move |command| controller.handle_tray_command(command)
-    })) {
-        Ok(icon) => Some(icon),
-        Err(error) => {
-            eprintln!("Could not create system-tray icon: {error}");
-            None
-        }
-    };
-    view.run()?;
-    Ok(())
+fn main() -> eframe::Result {
+    eframe::run_native(
+        "QMK Layer Indicator",
+        ui::native_options(),
+        Box::new(|creation_context| {
+            let indicator = ui::LayerIndicator::new(
+                creation_context.egui_ctx.clone(),
+                config::Settings::load(),
+            );
+            let tray_icon = match tray::create(Arc::new({
+                let indicator = indicator.clone();
+                move |command| indicator.handle_tray_command(command)
+            })) {
+                Ok(icon) => Some(icon),
+                Err(error) => {
+                    eprintln!("Could not create system-tray icon: {error}");
+                    None
+                }
+            };
+            let console_reader = qmk::start_console_reader({
+                let indicator = indicator.clone();
+                move |event| indicator.handle_qmk_event(event)
+            });
+            Ok(Box::new(ui::EguiApp::new(
+                indicator,
+                console_reader,
+                tray_icon,
+            )))
+        }),
+    )
 }
