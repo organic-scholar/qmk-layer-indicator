@@ -5,12 +5,16 @@ use std::{
     fs,
     path::{Path, PathBuf},
     process::Command,
+    sync::mpsc,
+    thread::{self, JoinHandle},
+    time::Duration,
 };
 
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 
 const EDITABLE_LAYER_COUNT: u8 = 7;
+const CONFIG_RELOAD_DEBOUNCE: Duration = Duration::from_millis(150);
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Settings {
@@ -44,11 +48,17 @@ impl Settings {
         }
     }
 
-    pub fn layer_alias(&self, layer: u8) -> Option<String> {
+    pub fn try_load() -> Result<Self, Box<dyn Error>> {
+        let path = config_path()?;
+        let contents = fs::read_to_string(&path)?;
+        Ok(toml::from_str(&contents)?)
+    }
+
+    pub fn layer_alias(&self, layer: u8) -> Option<&str> {
         self.layer_aliases
             .get(&layer)
             .filter(|alias| !alias.is_empty())
-            .cloned()
+            .map(String::as_str)
     }
 }
 
@@ -66,6 +76,17 @@ pub fn open_in_default_application() -> Result<(), Box<dyn Error>> {
 
 pub struct ConfigWatcher {
     _watcher: RecommendedWatcher,
+    stop_sender: mpsc::Sender<()>,
+    thread: Option<JoinHandle<()>>,
+}
+
+impl Drop for ConfigWatcher {
+    fn drop(&mut self) {
+        let _ = self.stop_sender.send(());
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
 }
 
 pub fn watch_config(
@@ -79,15 +100,46 @@ pub fn watch_config(
     // Watch the directory so atomic saves (write-temp-then-rename) are caught.
     fs::create_dir_all(&directory)?;
 
+    let (change_sender, change_receiver) = mpsc::channel();
+    let (stop_sender, stop_receiver) = mpsc::channel();
     let mut watcher =
         notify::recommended_watcher(move |result: notify::Result<Event>| match result {
-            Ok(event) if event_touches_config(&event, &path) => on_change(),
+            Ok(event) if event_touches_config(&event, &path) => {
+                let _ = change_sender.send(());
+            }
             Ok(_) => {}
             Err(error) => eprintln!("Config watch error: {error}"),
         })?;
     watcher.watch(&directory, RecursiveMode::NonRecursive)?;
 
-    Ok(ConfigWatcher { _watcher: watcher })
+    let thread = thread::Builder::new()
+        .name("config-watcher".into())
+        .spawn(move || {
+            loop {
+                if stop_receiver.try_recv().is_ok() {
+                    return;
+                }
+
+                if change_receiver
+                    .recv_timeout(CONFIG_RELOAD_DEBOUNCE)
+                    .is_err()
+                {
+                    continue;
+                }
+
+                while change_receiver.recv_timeout(CONFIG_RELOAD_DEBOUNCE).is_ok() {}
+                if stop_receiver.try_recv().is_ok() {
+                    return;
+                }
+                on_change();
+            }
+        })?;
+
+    Ok(ConfigWatcher {
+        _watcher: watcher,
+        stop_sender,
+        thread: Some(thread),
+    })
 }
 
 fn event_touches_config(event: &Event, config_path: &Path) -> bool {

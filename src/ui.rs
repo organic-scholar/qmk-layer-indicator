@@ -1,7 +1,4 @@
-use std::{
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use std::sync::{Arc, Mutex};
 
 use crate::{
     config::{ConfigWatcher, Settings},
@@ -74,7 +71,9 @@ impl LayerIndicator {
         let mut state = self.state.lock().expect("indicator state lock poisoned");
         match event {
             QmkEvent::DeviceConnected { .. } => return,
+            QmkEvent::LayerChanged(layer) if state.active_layer == layer => return,
             QmkEvent::LayerChanged(layer) => state.active_layer = layer,
+            QmkEvent::DeviceDisconnected { .. } if state.active_layer == 0 => return,
             QmkEvent::DeviceDisconnected { .. } => state.active_layer = 0,
         }
         state.sync_display();
@@ -94,8 +93,15 @@ impl LayerIndicator {
     }
 
     pub fn reload_configuration(&self) {
+        let settings = match Settings::try_load() {
+            Ok(settings) => settings,
+            Err(error) => {
+                eprintln!("Could not reload configuration; keeping current settings: {error}");
+                return;
+            }
+        };
         let mut state = self.state.lock().expect("indicator state lock poisoned");
-        state.settings = Settings::load();
+        state.settings = settings;
         state.sync_display();
         drop(state);
         self.context.request_repaint();
@@ -105,7 +111,7 @@ impl LayerIndicator {
 #[derive(Default)]
 struct IndicatorState {
     active_layer: u8,
-    displayed_layer: u8,
+    visible: bool,
     positioned: bool,
     shown: bool,
     previous_active: bool,
@@ -117,16 +123,15 @@ impl IndicatorState {
     // Only layers with a non-empty alias are shown; otherwise keep the last
     // label so the fade-out animation still has something to render.
     fn sync_display(&mut self) {
-        if self.active_layer != 0 {
-            if let Some(alias) = self.settings.layer_alias(self.active_layer) {
-                self.displayed_layer = self.active_layer;
-                self.label = alias;
-            }
+        self.visible = false;
+        if let Some(alias) = self.settings.layer_alias(self.active_layer) {
+            self.label = alias.into();
+            self.visible = true;
         }
     }
 
     fn is_shown(&self) -> bool {
-        self.active_layer != 0 && self.settings.layer_alias(self.active_layer).is_some()
+        self.visible
     }
 }
 
@@ -194,9 +199,6 @@ impl eframe::App for EguiApp {
             ANIMATION_DURATION,
             egui::emath::easing::cubic_out,
         );
-        if visibility > 0.0 && visibility < 1.0 {
-            ui.ctx().request_repaint_after(Duration::from_millis(16));
-        }
         if visibility == 0.0 {
             return;
         }
@@ -231,7 +233,7 @@ impl eframe::App for EguiApp {
 }
 
 fn application_icon() -> egui::IconData {
-    let image = image::load_from_memory(include_bytes!("../assets/icon-white.png"))
+    let image = image::load_from_memory(include_bytes!("../assets/icon.png"))
         .expect("icon-white.png must be a valid PNG")
         .into_rgba8();
     let (width, height) = image.dimensions();

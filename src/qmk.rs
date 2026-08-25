@@ -82,15 +82,17 @@ fn connect_console(api: &mut HidApi) -> Result<Option<QmkConsole>, String> {
 }
 
 fn run_console_reader(stop_receiver: Receiver<()>, on_event: impl Fn(QmkEvent)) {
-    let mut api = match HidApi::new() {
-        Ok(api) => api,
-        Err(error) => {
-            eprintln!("Could not initialize HID API: {error}");
-            return;
-        }
-    };
-
     loop {
+        let mut api = match HidApi::new() {
+            Ok(api) => api,
+            Err(error) => {
+                eprintln!("Could not initialize HID API: {error}");
+                if wait_for_stop(&stop_receiver) {
+                    return;
+                }
+                continue;
+            }
+        };
         let console = match connect_console(&mut api) {
             Ok(Some(console)) => {
                 on_event(QmkEvent::DeviceConnected {

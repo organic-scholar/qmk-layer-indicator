@@ -1,0 +1,48 @@
+name: Arch package
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build package in Arch Linux
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          if [[ "$GITHUB_REF_TYPE" != "tag" ]]; then
+            version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n1)"
+          fi
+          sed -i "s/^pkgver=.*/pkgver=$version/" packaging/arch/PKGBUILD
+          git archive --format=tar.gz --prefix="qmk-layer-indicator-$version/" HEAD \
+            > "packaging/arch/qmk-layer-indicator-$version.tar.gz"
+
+          docker run --rm \
+            --volume "$GITHUB_WORKSPACE:/work" \
+            --workdir /work/packaging/arch \
+            archlinux:base-devel \
+            bash -euc '
+              pacman -Syu --noconfirm
+              pacman -S --noconfirm --needed \
+                cargo pkgconf rust \
+                libglvnd libx11 libxcursor libxi libxkbcommon libxrandr \
+                systemd wayland
+              useradd --create-home builder
+              chown -R builder:builder /work
+              su builder -c "makepkg --noconfirm --cleanbuild"
+            '
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arch-x86_64-package
+          path: packaging/arch/*.pkg.tar.zst
+          if-no-files-found: error
