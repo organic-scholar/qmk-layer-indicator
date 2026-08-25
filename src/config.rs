@@ -44,12 +44,11 @@ impl Settings {
         }
     }
 
-    pub fn layer_label(&self, layer: u8) -> String {
+    pub fn layer_alias(&self, layer: u8) -> Option<String> {
         self.layer_aliases
             .get(&layer)
             .filter(|alias| !alias.is_empty())
             .cloned()
-            .unwrap_or_else(|| layer.to_string())
     }
 }
 

@@ -63,7 +63,7 @@ impl LayerIndicator {
             settings,
             ..Default::default()
         };
-        state.refresh_label();
+        state.sync_display();
         Self {
             state: Arc::new(Mutex::new(state)),
             context,
@@ -74,15 +74,10 @@ impl LayerIndicator {
         let mut state = self.state.lock().expect("indicator state lock poisoned");
         match event {
             QmkEvent::DeviceConnected { .. } => return,
-            QmkEvent::LayerChanged(layer) => {
-                state.active_layer = layer;
-                if layer != 0 {
-                    state.displayed_layer = layer;
-                    state.refresh_label();
-                }
-            }
+            QmkEvent::LayerChanged(layer) => state.active_layer = layer,
             QmkEvent::DeviceDisconnected { .. } => state.active_layer = 0,
         }
+        state.sync_display();
         drop(state);
         self.context.request_repaint();
     }
@@ -101,7 +96,7 @@ impl LayerIndicator {
     pub fn reload_configuration(&self) {
         let mut state = self.state.lock().expect("indicator state lock poisoned");
         state.settings = Settings::load();
-        state.refresh_label();
+        state.sync_display();
         drop(state);
         self.context.request_repaint();
     }
@@ -119,8 +114,19 @@ struct IndicatorState {
 }
 
 impl IndicatorState {
-    fn refresh_label(&mut self) {
-        self.label = self.settings.layer_label(self.displayed_layer);
+    // Only layers with a non-empty alias are shown; otherwise keep the last
+    // label so the fade-out animation still has something to render.
+    fn sync_display(&mut self) {
+        if self.active_layer != 0 {
+            if let Some(alias) = self.settings.layer_alias(self.active_layer) {
+                self.displayed_layer = self.active_layer;
+                self.label = alias;
+            }
+        }
+    }
+
+    fn is_shown(&self) -> bool {
+        self.active_layer != 0 && self.settings.layer_alias(self.active_layer).is_some()
     }
 }
 
@@ -154,7 +160,7 @@ impl eframe::App for EguiApp {
             .state
             .lock()
             .expect("indicator state lock poisoned");
-        let active = state.active_layer != 0;
+        let active = state.is_shown();
 
         if active && !state.positioned {
             let monitor_size = ui.ctx().input(|input| input.viewport().monitor_size);
