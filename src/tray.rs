@@ -3,7 +3,6 @@ use std::sync::Arc;
 #[derive(Debug)]
 pub enum TrayCommand {
     EditConfiguration,
-    ReloadConfiguration,
     Quit,
 }
 
@@ -43,14 +42,6 @@ impl Tray for LinuxTray {
                 label: "Edit configuration…".into(),
                 activate: Box::new(|tray: &mut LinuxTray| {
                     (tray.command_callback)(TrayCommand::EditConfiguration);
-                }),
-                ..Default::default()
-            }
-            .into(),
-            StandardItem {
-                label: "Reload configuration".into(),
-                activate: Box::new(|tray: &mut LinuxTray| {
-                    (tray.command_callback)(TrayCommand::ReloadConfiguration);
                 }),
                 ..Default::default()
             }
@@ -109,9 +100,6 @@ const QUIT_MENU_ID: &str = "quit";
 const EDIT_CONFIGURATION_MENU_ID: &str = "edit-configuration";
 
 #[cfg(target_os = "macos")]
-const RELOAD_CONFIGURATION_MENU_ID: &str = "reload-configuration";
-
-#[cfg(target_os = "macos")]
 pub struct TrayHandle {
     _icon: TrayIcon,
 }
@@ -121,8 +109,6 @@ pub fn create(command_callback: TrayCallback) -> Result<TrayHandle, Box<dyn std:
     MenuEvent::set_event_handler(Some(move |event: MenuEvent| {
         let command = if event.id == EDIT_CONFIGURATION_MENU_ID {
             Some(TrayCommand::EditConfiguration)
-        } else if event.id == RELOAD_CONFIGURATION_MENU_ID {
-            Some(TrayCommand::ReloadConfiguration)
         } else if event.id == QUIT_MENU_ID {
             Some(TrayCommand::Quit)
         } else {
@@ -141,15 +127,8 @@ pub fn create(command_callback: TrayCallback) -> Result<TrayHandle, Box<dyn std:
         true,
         None,
     );
-    let reload_configuration_item = MenuItem::with_id(
-        RELOAD_CONFIGURATION_MENU_ID,
-        "Reload configuration",
-        true,
-        None,
-    );
     let quit_item = MenuItem::with_id(QUIT_MENU_ID, "Quit", true, None);
     menu.append(&edit_configuration_item)?;
-    menu.append(&reload_configuration_item)?;
     menu.append(&quit_item)?;
 
     Ok(TrayHandle {

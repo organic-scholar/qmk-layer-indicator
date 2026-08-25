@@ -1,5 +1,13 @@
-use std::{collections::BTreeMap, env, error::Error, fs, path::PathBuf, process::Command};
+use std::{
+    collections::BTreeMap,
+    env,
+    error::Error,
+    fs,
+    path::{Path, PathBuf},
+    process::Command,
+};
 
+use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 
 const EDITABLE_LAYER_COUNT: u8 = 7;
@@ -55,6 +63,39 @@ pub fn open_in_default_application() -> Result<(), Box<dyn Error>> {
     Command::new("open").arg(path).spawn()?;
 
     Ok(())
+}
+
+pub struct ConfigWatcher {
+    _watcher: RecommendedWatcher,
+}
+
+pub fn watch_config(
+    on_change: impl Fn() + Send + 'static,
+) -> Result<ConfigWatcher, Box<dyn Error>> {
+    let path = config_path()?;
+    let directory = path
+        .parent()
+        .ok_or("config path has a parent directory")?
+        .to_path_buf();
+    // Watch the directory so atomic saves (write-temp-then-rename) are caught.
+    fs::create_dir_all(&directory)?;
+
+    let mut watcher =
+        notify::recommended_watcher(move |result: notify::Result<Event>| match result {
+            Ok(event) if event_touches_config(&event, &path) => on_change(),
+            Ok(_) => {}
+            Err(error) => eprintln!("Config watch error: {error}"),
+        })?;
+    watcher.watch(&directory, RecursiveMode::NonRecursive)?;
+
+    Ok(ConfigWatcher { _watcher: watcher })
+}
+
+fn event_touches_config(event: &Event, config_path: &Path) -> bool {
+    matches!(
+        event.kind,
+        EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_)
+    ) && event.paths.iter().any(|path| path == config_path)
 }
 
 fn ensure_config_file() -> Result<PathBuf, Box<dyn Error>> {

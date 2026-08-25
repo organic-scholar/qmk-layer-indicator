@@ -8,6 +8,7 @@ license = "GPL-3.0-only"
 hidapi = "2.6.6"
 egui = "0.36.1"
 image = { version = "0.25.10", default-features = false, features = ["png"] }
+notify = "8"
 serde = { version = "1", features = ["derive"] }
 toml = "0.9"
 

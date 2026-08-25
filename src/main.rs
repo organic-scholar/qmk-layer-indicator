@@ -28,10 +28,21 @@ fn main() -> eframe::Result {
                 let indicator = indicator.clone();
                 move |event| indicator.handle_qmk_event(event)
             });
+            let config_watcher = match config::watch_config({
+                let indicator = indicator.clone();
+                move || indicator.reload_configuration()
+            }) {
+                Ok(watcher) => Some(watcher),
+                Err(error) => {
+                    eprintln!("Could not watch the configuration file: {error}");
+                    None
+                }
+            };
             Ok(Box::new(ui::EguiApp::new(
                 indicator,
                 console_reader,
                 tray_icon,
+                config_watcher,
             )))
         }),
     )

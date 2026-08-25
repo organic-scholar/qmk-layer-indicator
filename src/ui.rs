@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    config::Settings,
+    config::{ConfigWatcher, Settings},
     qmk::{ConsoleReader, QmkEvent},
     tray::{TrayCommand, TrayHandle},
 };
@@ -94,15 +94,16 @@ impl LayerIndicator {
                     eprintln!("Could not open configuration: {error}");
                 }
             }
-            TrayCommand::ReloadConfiguration => {
-                let mut state = self.state.lock().expect("indicator state lock poisoned");
-                state.settings = Settings::load();
-                state.refresh_label();
-                drop(state);
-                self.context.request_repaint();
-            }
             TrayCommand::Quit => self.context.send_viewport_cmd(egui::ViewportCommand::Close),
         }
+    }
+
+    pub fn reload_configuration(&self) {
+        let mut state = self.state.lock().expect("indicator state lock poisoned");
+        state.settings = Settings::load();
+        state.refresh_label();
+        drop(state);
+        self.context.request_repaint();
     }
 }
 
@@ -127,6 +128,7 @@ pub struct EguiApp {
     indicator: LayerIndicator,
     _console_reader: ConsoleReader,
     _tray_icon: Option<TrayHandle>,
+    _config_watcher: Option<ConfigWatcher>,
 }
 
 impl EguiApp {
@@ -134,11 +136,13 @@ impl EguiApp {
         indicator: LayerIndicator,
         console_reader: ConsoleReader,
         tray_icon: Option<TrayHandle>,
+        config_watcher: Option<ConfigWatcher>,
     ) -> Self {
         Self {
             indicator,
             _console_reader: console_reader,
             _tray_icon: tray_icon,
+            _config_watcher: config_watcher,
         }
     }
 }
