@@ -86,7 +86,7 @@ fn config_path() -> Result<PathBuf, Box<dyn Error>> {
 }
 
 fn default_layer_aliases() -> BTreeMap<u8, String> {
-    (1..EDITABLE_LAYER_COUNT)
+    (1..=EDITABLE_LAYER_COUNT)
         .map(|layer| (layer, String::new()))
         .collect()
 }

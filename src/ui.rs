@@ -10,6 +10,10 @@ use crate::{
 };
 
 const INDICATOR_SIZE: f32 = 104.0;
+// Larger on macOS to clear the Dock, which is not excluded from `monitor_size`.
+#[cfg(target_os = "macos")]
+const BOTTOM_MARGIN: f32 = 120.0;
+#[cfg(not(target_os = "macos"))]
 const BOTTOM_MARGIN: f32 = 50.0;
 const ANIMATION_DURATION: f32 = 0.12;
 
@@ -24,6 +28,8 @@ pub fn native_options() -> eframe::NativeOptions {
         .with_active(false)
         .with_visible(false)
         .with_mouse_passthrough(true)
+        // Drop the macOS window shadow so the overlay has no border/ghosting.
+        .with_has_shadow(false)
         .with_taskbar(false);
 
     #[cfg(target_os = "linux")]
@@ -33,6 +39,14 @@ pub fn native_options() -> eframe::NativeOptions {
 
     eframe::NativeOptions {
         viewport,
+        // Keep the app out of the macOS Dock and app switcher.
+        #[cfg(target_os = "macos")]
+        event_loop_builder: Some(Box::new(|builder| {
+            use winit::platform::macos::{ActivationPolicy, EventLoopBuilderExtMacOS};
+            builder.with_activation_policy(ActivationPolicy::Accessory);
+            // Don't steal focus from the active app when launching.
+            builder.with_activate_ignoring_other_apps(false);
+        })),
         ..Default::default()
     }
 }
@@ -45,11 +59,13 @@ pub struct LayerIndicator {
 
 impl LayerIndicator {
     pub fn new(context: egui::Context, settings: Settings) -> Self {
+        let mut state = IndicatorState {
+            settings,
+            ..Default::default()
+        };
+        state.refresh_label();
         Self {
-            state: Arc::new(Mutex::new(IndicatorState {
-                settings,
-                ..Default::default()
-            })),
+            state: Arc::new(Mutex::new(state)),
             context,
         }
     }
@@ -62,6 +78,7 @@ impl LayerIndicator {
                 state.active_layer = layer;
                 if layer != 0 {
                     state.displayed_layer = layer;
+                    state.refresh_label();
                 }
             }
             QmkEvent::DeviceDisconnected { .. } => state.active_layer = 0,
@@ -78,10 +95,10 @@ impl LayerIndicator {
                 }
             }
             TrayCommand::ReloadConfiguration => {
-                self.state
-                    .lock()
-                    .expect("indicator state lock poisoned")
-                    .settings = Settings::load();
+                let mut state = self.state.lock().expect("indicator state lock poisoned");
+                state.settings = Settings::load();
+                state.refresh_label();
+                drop(state);
                 self.context.request_repaint();
             }
             TrayCommand::Quit => self.context.send_viewport_cmd(egui::ViewportCommand::Close),
@@ -95,14 +112,21 @@ struct IndicatorState {
     displayed_layer: u8,
     positioned: bool,
     shown: bool,
+    previous_active: bool,
+    label: String,
     settings: Settings,
+}
+
+impl IndicatorState {
+    fn refresh_label(&mut self) {
+        self.label = self.settings.layer_label(self.displayed_layer);
+    }
 }
 
 pub struct EguiApp {
     indicator: LayerIndicator,
     _console_reader: ConsoleReader,
     _tray_icon: Option<TrayHandle>,
-    previous_active: bool,
 }
 
 impl EguiApp {
@@ -115,7 +139,6 @@ impl EguiApp {
             indicator,
             _console_reader: console_reader,
             _tray_icon: tray_icon,
-            previous_active: false,
         }
     }
 }
@@ -149,10 +172,10 @@ impl eframe::App for EguiApp {
             state.shown = true;
         }
 
-        if active != self.previous_active {
+        if active != state.previous_active {
             ui.ctx()
                 .send_viewport_cmd(egui::ViewportCommand::MousePassthrough(!active));
-            self.previous_active = active;
+            state.previous_active = active;
         }
 
         let visibility = ui.ctx().animate_bool_with_time_and_easing(
@@ -168,7 +191,7 @@ impl eframe::App for EguiApp {
             return;
         }
 
-        let label = state.settings.layer_label(state.displayed_layer);
+        let label = state.label.clone();
         drop(state);
 
         let available = ui.max_rect();

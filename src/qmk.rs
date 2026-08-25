@@ -58,12 +58,12 @@ pub fn start_console_reader(on_event: impl Fn(QmkEvent) + Send + 'static) -> Con
     }
 }
 
-fn connect_console() -> Result<Option<QmkConsole>, String> {
-    let api = HidApi::new().map_err(|error| error.to_string())?;
+fn connect_console(api: &mut HidApi) -> Result<Option<QmkConsole>, String> {
+    api.refresh_devices().map_err(|error| error.to_string())?;
 
     for device in api.device_list() {
         if device.usage_page() == CONSOLE_HID_USAGE_PAGE && device.usage() == CONSOLE_HID_USAGE {
-            let device_handle = device.open_device(&api).map_err(|error| {
+            let device_handle = device.open_device(api).map_err(|error| {
                 format!(
                     "found {:04x}:{:04x}, but opening its console interface failed: {error}",
                     device.vendor_id(),
@@ -82,8 +82,16 @@ fn connect_console() -> Result<Option<QmkConsole>, String> {
 }
 
 fn run_console_reader(stop_receiver: Receiver<()>, on_event: impl Fn(QmkEvent)) {
+    let mut api = match HidApi::new() {
+        Ok(api) => api,
+        Err(error) => {
+            eprintln!("Could not initialize HID API: {error}");
+            return;
+        }
+    };
+
     loop {
-        let console = match connect_console() {
+        let console = match connect_console(&mut api) {
             Ok(Some(console)) => {
                 on_event(QmkEvent::DeviceConnected {
                     name: console.name.clone(),
@@ -132,6 +140,7 @@ fn read_console(
             Ok(length) => {
                 let message = String::from_utf8_lossy(&report[..length]);
                 let message = message.trim_end_matches('\0');
+                #[cfg(debug_assertions)]
                 eprint!("{message}");
                 for event in parser.process(message) {
                     on_event(event);
