@@ -5,6 +5,10 @@
 /packaging/arch/*.pkg.tar.*
 /packaging/arch/src/
 /packaging/arch/pkg/
+/packaging/arch/dist/
+
+# Local macOS package artifacts.
+/packaging/macos/dist/
 
 # Local operating-system and editor files.
 .DS_Store

@@ -100,6 +100,10 @@ impl LayerIndicator {
                 return;
             }
         };
+        #[cfg(target_os = "linux")]
+        if let Err(error) = settings.apply_autostart() {
+            eprintln!("Could not update start-at-login setting: {error}");
+        }
         let mut state = self.state.lock().expect("indicator state lock poisoned");
         state.settings = settings;
         state.sync_display();

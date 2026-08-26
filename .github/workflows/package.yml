@@ -1,4 +1,4 @@
-name: Arch package
+name: Package
 
 on:
   push:
@@ -9,7 +9,8 @@ permissions:
   contents: read
 
 jobs:
-  package:
+  arch:
+    name: Arch Linux package
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,8 +24,6 @@ jobs:
             version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n1)"
           fi
           sed -i "s/^pkgver=.*/pkgver=$version/" packaging/arch/PKGBUILD
-          git archive --format=tar.gz --prefix="qmk-layer-indicator-$version/" HEAD \
-            > "packaging/arch/qmk-layer-indicator-$version.tar.gz"
 
           docker run --rm \
             --volume "$GITHUB_WORKSPACE:/work" \
@@ -33,16 +32,44 @@ jobs:
             bash -euc '
               pacman -Syu --noconfirm
               pacman -S --noconfirm --needed \
-                cargo pkgconf rust \
+                cargo git just pkgconf \
                 libglvnd libx11 libxcursor libxi libxkbcommon libxrandr \
                 systemd wayland
               useradd --create-home builder
               chown -R builder:builder /work
-              su builder -c "makepkg --noconfirm --cleanbuild"
+              su builder -c "just arch-package --noconfirm"
             '
 
       - uses: actions/upload-artifact@v4
         with:
           name: arch-x86_64-package
-          path: packaging/arch/*.pkg.tar.zst
+          path: packaging/arch/dist/*.pkg.tar.zst
+          if-no-files-found: error
+
+  macos:
+    name: macOS ${{ matrix.suffix }} package
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-13
+            suffix: x86_64
+          - runner: macos-14
+            suffix: aarch64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install just
+        run: command -v just || brew install just
+
+      - name: Build app bundle and disk image
+        run: just macos-package
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.suffix }}-dmg
+          path: packaging/macos/dist/*.dmg
           if-no-files-found: error

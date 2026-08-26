@@ -20,12 +20,17 @@ const CONFIG_RELOAD_DEBOUNCE: Duration = Duration::from_millis(150);
 pub struct Settings {
     #[serde(default = "default_layer_aliases")]
     layer_aliases: BTreeMap<u8, String>,
+    #[cfg(target_os = "linux")]
+    #[serde(default)]
+    start_at_login: bool,
 }
 
 impl Default for Settings {
     fn default() -> Self {
         Self {
             layer_aliases: default_layer_aliases(),
+            #[cfg(target_os = "linux")]
+            start_at_login: false,
         }
     }
 }
@@ -59,6 +64,36 @@ impl Settings {
             .get(&layer)
             .filter(|alias| !alias.is_empty())
             .map(String::as_str)
+    }
+
+    #[cfg(target_os = "linux")]
+    pub fn apply_autostart(&self) -> Result<(), Box<dyn Error>> {
+        let path = autostart_path()?;
+
+        if !self.start_at_login {
+            match fs::remove_file(&path) {
+                Ok(()) => return Ok(()),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+                Err(error) => return Err(error.into()),
+            }
+        }
+
+        let executable = env::current_exe()?;
+        let executable = executable
+            .to_str()
+            .ok_or("application path is not valid UTF-8")?;
+        let executable = escape_desktop_exec_argument(executable);
+        let directory = path
+            .parent()
+            .expect("autostart path has a parent directory");
+        fs::create_dir_all(directory)?;
+        fs::write(
+            path,
+            format!(
+                "[Desktop Entry]\nType=Application\nName=QMK Layer Indicator\nExec={executable}\nTerminal=false\nX-GNOME-Autostart-enabled=true\n"
+            ),
+        )?;
+        Ok(())
     }
 }
 
@@ -162,6 +197,12 @@ fn ensure_config_file() -> Result<PathBuf, Box<dyn Error>> {
 }
 
 fn config_path() -> Result<PathBuf, Box<dyn Error>> {
+    Ok(config_base_directory()?
+        .join("qmk-layer-indicator")
+        .join("config.toml"))
+}
+
+fn config_base_directory() -> Result<PathBuf, Box<dyn Error>> {
     #[cfg(target_os = "linux")]
     let base_directory = env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
@@ -172,9 +213,26 @@ fn config_path() -> Result<PathBuf, Box<dyn Error>> {
         env::var_os("HOME").map(|home| PathBuf::from(home).join("Library/Application Support"));
 
     let base_directory = base_directory.ok_or("could not determine the configuration directory")?;
-    Ok(base_directory
-        .join("qmk-layer-indicator")
-        .join("config.toml"))
+    Ok(base_directory)
+}
+
+#[cfg(target_os = "linux")]
+fn autostart_path() -> Result<PathBuf, Box<dyn Error>> {
+    Ok(config_base_directory()?
+        .join("autostart")
+        .join("qmk-layer-indicator.desktop"))
+}
+
+#[cfg(target_os = "linux")]
+fn escape_desktop_exec_argument(argument: &str) -> String {
+    format!(
+        "\"{}\"",
+        argument
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('`', "\\`")
+            .replace('$', "\\$")
+    )
 }
 
 fn default_layer_aliases() -> BTreeMap<u8, String> {

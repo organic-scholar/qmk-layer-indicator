@@ -10,10 +10,13 @@ fn main() -> eframe::Result {
         "QMK Layer Indicator",
         ui::native_options(),
         Box::new(|creation_context| {
-            let indicator = ui::LayerIndicator::new(
-                creation_context.egui_ctx.clone(),
-                config::Settings::load(),
-            );
+            let settings = config::Settings::load();
+            #[cfg(target_os = "linux")]
+            if let Err(error) = settings.apply_autostart() {
+                eprintln!("Could not update start-at-login setting: {error}");
+            }
+
+            let indicator = ui::LayerIndicator::new(creation_context.egui_ctx.clone(), settings);
             let tray_icon = match tray::create(Arc::new({
                 let indicator = indicator.clone();
                 move |command| indicator.handle_tray_command(command)
