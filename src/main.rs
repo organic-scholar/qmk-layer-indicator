@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 mod config;
+mod icons;
 mod qmk;
 mod tray;
 mod ui;
@@ -10,6 +11,7 @@ fn main() -> eframe::Result {
         "QMK Layer Indicator",
         ui::native_options(),
         Box::new(|creation_context| {
+            egui_extras::install_image_loaders(&creation_context.egui_ctx);
             let settings = config::Settings::load();
             #[cfg(target_os = "linux")]
             if let Err(error) = settings.apply_autostart() {

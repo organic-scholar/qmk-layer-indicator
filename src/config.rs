@@ -20,6 +20,8 @@ const CONFIG_RELOAD_DEBOUNCE: Duration = Duration::from_millis(150);
 pub struct Settings {
     #[serde(default = "default_layer_aliases")]
     layer_aliases: BTreeMap<u8, String>,
+    #[serde(default)]
+    layer_icons: BTreeMap<u8, String>,
     #[cfg(target_os = "linux")]
     #[serde(default)]
     start_at_login: bool,
@@ -29,6 +31,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             layer_aliases: default_layer_aliases(),
+            layer_icons: BTreeMap::new(),
             #[cfg(target_os = "linux")]
             start_at_login: false,
         }
@@ -64,6 +67,11 @@ impl Settings {
             .get(&layer)
             .filter(|alias| !alias.is_empty())
             .map(String::as_str)
+    }
+
+    pub fn layer_icon(&self, layer: u8) -> Option<&str> {
+        let icon = self.layer_icons.get(&layer)?.as_str();
+        crate::icons::contains(icon).then_some(icon)
     }
 
     #[cfg(target_os = "linux")]

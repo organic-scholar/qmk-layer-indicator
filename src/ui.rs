@@ -6,7 +6,7 @@ use crate::{
     tray::{TrayCommand, TrayHandle},
 };
 
-const INDICATOR_SIZE: f32 = 104.0;
+const INDICATOR_SIZE: f32 = 96.0;
 // Larger on macOS to clear the Dock, which is not excluded from `monitor_size`.
 #[cfg(target_os = "macos")]
 const BOTTOM_MARGIN: f32 = 120.0;
@@ -120,15 +120,22 @@ struct IndicatorState {
     shown: bool,
     previous_active: bool,
     label: String,
+    icon: Option<String>,
     settings: Settings,
 }
 
 impl IndicatorState {
     // Only layers with a non-empty alias are shown; otherwise keep the last
-    // label so the fade-out animation still has something to render.
+    // content so the fade-out animation still has something to render.
     fn sync_display(&mut self) {
         self.visible = false;
+        if let Some(icon) = self.settings.layer_icon(self.active_layer) {
+            self.icon = Some(icon.into());
+            self.visible = true;
+            return;
+        }
         if let Some(alias) = self.settings.layer_alias(self.active_layer) {
+            self.icon = None;
             self.label = alias.into();
             self.visible = true;
         }
@@ -208,6 +215,7 @@ impl eframe::App for EguiApp {
         }
 
         let label = state.label.clone();
+        let icon = state.icon.clone();
         drop(state);
 
         let available = ui.max_rect();
@@ -215,20 +223,34 @@ impl eframe::App for EguiApp {
         let indicator_rect =
             egui::Rect::from_center_size(available.center(), available.size() * scale);
         let hovered = ui.rect_contains_pointer(indicator_rect);
-        let (background_alpha, text_alpha) = if hovered { (0.5, 1.0) } else { (0.25, 0.85) };
+        let (background_alpha, text_alpha) = if hovered { (0.5, 1.0) } else { (0.4, 1.0) };
 
         ui.painter().rect_filled(
             indicator_rect,
-            egui::CornerRadius::same((22.0 * scale).round() as u8),
+            egui::CornerRadius::same((20.0 * scale).round() as u8),
             egui::Rgba::from_black_alpha(background_alpha * visibility),
         );
-        ui.painter().text(
-            indicator_rect.center(),
-            egui::Align2::CENTER_CENTER,
-            label,
-            egui::FontId::proportional(48.0 * scale),
-            egui::Rgba::from_white_alpha(text_alpha * visibility).into(),
-        );
+        match icon {
+            Some(icon) => {
+                let icon_rect = indicator_rect.shrink(24.0 * scale);
+                if let Some(image) = crate::icons::image_source(&icon) {
+                    ui.put(
+                        icon_rect,
+                        egui::Image::new(image)
+                            .tint(egui::Rgba::from_white_alpha(text_alpha * visibility)),
+                    );
+                }
+            }
+            None => {
+                ui.painter().text(
+                    indicator_rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    label,
+                    egui::FontId::proportional(44.0 * scale),
+                    egui::Rgba::from_white_alpha(text_alpha * visibility).into(),
+                );
+            }
+        }
     }
 
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
