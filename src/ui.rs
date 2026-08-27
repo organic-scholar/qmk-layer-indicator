@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use crate::{
-    config::{ConfigWatcher, Settings},
+    config::{ConfigWatcher, IndicatorShape, Settings},
     qmk::{ConsoleReader, QmkEvent},
     tray::{TrayCommand, TrayHandle},
 };
@@ -216,6 +216,7 @@ impl eframe::App for EguiApp {
 
         let label = state.label.clone();
         let icon = state.icon.clone();
+        let shape = state.settings.indicator_shape();
         drop(state);
 
         let available = ui.max_rect();
@@ -225,11 +226,17 @@ impl eframe::App for EguiApp {
         let hovered = ui.rect_contains_pointer(indicator_rect);
         let (background_alpha, text_alpha) = if hovered { (0.5, 1.0) } else { (0.4, 1.0) };
 
-        ui.painter().rect_filled(
-            indicator_rect,
-            egui::CornerRadius::same((20.0 * scale).round() as u8),
-            egui::Rgba::from_black_alpha(background_alpha * visibility),
-        );
+        let background = egui::Rgba::from_black_alpha(background_alpha * visibility).into();
+        match shape {
+            IndicatorShape::Squircle => paint_squircle(ui.painter(), indicator_rect, background),
+            IndicatorShape::RoundedRectangle => {
+                ui.painter().rect_filled(
+                    indicator_rect,
+                    egui::CornerRadius::same((20.0 * scale).round() as u8),
+                    background,
+                );
+            }
+        }
         match icon {
             Some(icon) => {
                 let icon_rect = indicator_rect.shrink(24.0 * scale);
@@ -256,6 +263,32 @@ impl eframe::App for EguiApp {
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
         egui::Color32::TRANSPARENT.to_normalized_gamma_f32()
     }
+}
+
+fn paint_squircle(painter: &egui::Painter, rect: egui::Rect, fill: egui::Color32) {
+    const SEGMENTS: usize = 64;
+    // A Lamé curve with exponent four closely matches macOS-style continuous corners.
+    const EXPONENT: f32 = 4.0;
+
+    let center = rect.center();
+    let radius = rect.size() / 2.0;
+    let points = (0..SEGMENTS)
+        .map(|index| {
+            let angle = std::f32::consts::TAU * index as f32 / SEGMENTS as f32;
+            let x = angle.cos();
+            let y = angle.sin();
+            egui::pos2(
+                center.x + radius.x * x.signum() * x.abs().powf(2.0 / EXPONENT),
+                center.y + radius.y * y.signum() * y.abs().powf(2.0 / EXPONENT),
+            )
+        })
+        .collect();
+
+    painter.add(egui::Shape::convex_polygon(
+        points,
+        fill,
+        egui::Stroke::NONE,
+    ));
 }
 
 fn application_icon() -> egui::IconData {

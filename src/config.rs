@@ -18,6 +18,8 @@ const CONFIG_RELOAD_DEBOUNCE: Duration = Duration::from_millis(150);
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Settings {
+    #[serde(default)]
+    indicator_shape: IndicatorShape,
     #[serde(default = "default_layer_aliases")]
     layer_aliases: BTreeMap<u8, String>,
     #[serde(default)]
@@ -30,6 +32,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            indicator_shape: IndicatorShape::default(),
             layer_aliases: default_layer_aliases(),
             layer_icons: BTreeMap::new(),
             #[cfg(target_os = "linux")]
@@ -69,6 +72,10 @@ impl Settings {
             .map(String::as_str)
     }
 
+    pub fn indicator_shape(&self) -> IndicatorShape {
+        self.indicator_shape
+    }
+
     pub fn layer_icon(&self, layer: u8) -> Option<&str> {
         let icon = self.layer_icons.get(&layer)?.as_str();
         crate::icons::contains(icon).then_some(icon)
@@ -103,6 +110,14 @@ impl Settings {
         )?;
         Ok(())
     }
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum IndicatorShape {
+    Squircle,
+    #[default]
+    RoundedRectangle,
 }
 
 pub fn open_in_default_application() -> Result<(), Box<dyn Error>> {
