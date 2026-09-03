@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use crate::{
-    config::{ConfigWatcher, IndicatorShape, Settings},
+    config::{ConfigWatcher, IndicatorPosition, IndicatorShape, Settings},
     qmk::{ConsoleReader, QmkEvent},
     tray::{TrayCommand, TrayHandle},
 };
@@ -11,7 +11,8 @@ const INDICATOR_SIZE: f32 = 96.0;
 #[cfg(target_os = "macos")]
 const BOTTOM_MARGIN: f32 = 120.0;
 #[cfg(not(target_os = "macos"))]
-const BOTTOM_MARGIN: f32 = 50.0;
+const BOTTOM_MARGIN: f32 = 120.0;
+const TOP_MARGIN: f32 = 120.0;
 const ANIMATION_DURATION: f32 = 0.12;
 
 pub fn native_options() -> eframe::NativeOptions {
@@ -106,6 +107,9 @@ impl LayerIndicator {
         }
         let mut state = self.state.lock().expect("indicator state lock poisoned");
         state.settings = settings;
+        // Apply a changed position the next time `ui` runs, including while the
+        // indicator is already visible.
+        state.positioned = false;
         state.sync_display();
         drop(state);
         self.context.request_repaint();
@@ -181,10 +185,11 @@ impl eframe::App for EguiApp {
         if active && !state.positioned {
             let monitor_size = ui.ctx().input(|input| input.viewport().monitor_size);
             if let Some(monitor_size) = monitor_size {
+                let position = state.settings.position();
                 ui.ctx()
-                    .send_viewport_cmd(egui::ViewportCommand::OuterPosition(egui::pos2(
-                        (monitor_size.x - INDICATOR_SIZE) / 2.0,
-                        monitor_size.y - INDICATOR_SIZE - BOTTOM_MARGIN,
+                    .send_viewport_cmd(egui::ViewportCommand::OuterPosition(indicator_position(
+                        monitor_size,
+                        position,
                     )));
                 state.positioned = true;
                 ui.ctx().request_repaint();
@@ -263,6 +268,15 @@ impl eframe::App for EguiApp {
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
         egui::Color32::TRANSPARENT.to_normalized_gamma_f32()
     }
+}
+
+fn indicator_position(monitor_size: egui::Vec2, position: IndicatorPosition) -> egui::Pos2 {
+    let x = (monitor_size.x - INDICATOR_SIZE) / 2.0;
+    let y = match position {
+        IndicatorPosition::Top => TOP_MARGIN,
+        IndicatorPosition::Bottom => monitor_size.y - INDICATOR_SIZE - BOTTOM_MARGIN,
+    };
+    egui::pos2(x, y)
 }
 
 fn paint_squircle(painter: &egui::Painter, rect: egui::Rect, fill: egui::Color32) {

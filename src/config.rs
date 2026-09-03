@@ -20,6 +20,8 @@ const CONFIG_RELOAD_DEBOUNCE: Duration = Duration::from_millis(150);
 pub struct Settings {
     #[serde(default)]
     indicator_shape: IndicatorShape,
+    #[serde(default)]
+    position: IndicatorPosition,
     #[serde(default = "default_layer_aliases")]
     layer_aliases: BTreeMap<u8, String>,
     #[serde(default)]
@@ -33,6 +35,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             indicator_shape: IndicatorShape::default(),
+            position: IndicatorPosition::default(),
             layer_aliases: default_layer_aliases(),
             layer_icons: BTreeMap::new(),
             #[cfg(target_os = "linux")]
@@ -74,6 +77,10 @@ impl Settings {
 
     pub fn indicator_shape(&self) -> IndicatorShape {
         self.indicator_shape
+    }
+
+    pub fn position(&self) -> IndicatorPosition {
+        self.position
     }
 
     pub fn layer_icon(&self, layer: u8) -> Option<&str> {
@@ -118,6 +125,14 @@ pub enum IndicatorShape {
     Squircle,
     #[default]
     RoundedRectangle,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum IndicatorPosition {
+    Top,
+    #[default]
+    Bottom,
 }
 
 pub fn open_in_default_application() -> Result<(), Box<dyn Error>> {
