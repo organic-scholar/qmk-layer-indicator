@@ -1,4 +1,7 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
+};
 
 use crate::{
     config::{ConfigWatcher, IndicatorPosition, IndicatorShape, Settings},
@@ -6,19 +9,16 @@ use crate::{
     tray::{TrayCommand, TrayHandle},
 };
 
-const INDICATOR_SIZE: f32 = 96.0;
-// Larger on macOS to clear the Dock, which is not excluded from `monitor_size`.
-#[cfg(target_os = "macos")]
-const BOTTOM_MARGIN: f32 = 120.0;
-#[cfg(not(target_os = "macos"))]
-const BOTTOM_MARGIN: f32 = 120.0;
-const TOP_MARGIN: f32 = 120.0;
-const ANIMATION_DURATION: f32 = 0.12;
+const SHADOW_MARGIN: f32 = 12.0;
+const SHOW_ANIMATION_DURATION: f32 = 0.16;
+const HIDE_ANIMATION_DURATION: f32 = 0.16;
+const CONTENT_ANIMATION_DURATION: Duration = Duration::from_millis(120);
 
-pub fn native_options() -> eframe::NativeOptions {
+pub fn native_options(settings: &Settings) -> eframe::NativeOptions {
+    let window_size = window_size(settings.indicator_size());
     let viewport = egui::ViewportBuilder::default()
         .with_icon(Arc::new(application_icon()))
-        .with_inner_size([INDICATOR_SIZE, INDICATOR_SIZE])
+        .with_inner_size([window_size, window_size])
         .with_resizable(false)
         .with_decorations(false)
         .with_transparent(true)
@@ -105,6 +105,12 @@ impl LayerIndicator {
         if let Err(error) = settings.apply_autostart() {
             eprintln!("Could not update start-at-login setting: {error}");
         }
+        let window_size = window_size(settings.indicator_size());
+        self.context
+            .send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(
+                window_size,
+                window_size,
+            )));
         let mut state = self.state.lock().expect("indicator state lock poisoned");
         state.settings = settings;
         // Apply a changed position the next time `ui` runs, including while the
@@ -122,9 +128,9 @@ struct IndicatorState {
     visible: bool,
     positioned: bool,
     shown: bool,
-    previous_active: bool,
     label: String,
     icon: Option<String>,
+    content_changed_at: Option<Instant>,
     settings: Settings,
 }
 
@@ -136,12 +142,14 @@ impl IndicatorState {
         if let Some(icon) = self.settings.layer_icon(self.active_layer) {
             self.icon = Some(icon.into());
             self.visible = true;
+            self.content_changed_at = Some(Instant::now());
             return;
         }
         if let Some(alias) = self.settings.layer_alias(self.active_layer) {
             self.icon = None;
             self.label = alias.into();
             self.visible = true;
+            self.content_changed_at = Some(Instant::now());
         }
     }
 
@@ -186,10 +194,14 @@ impl eframe::App for EguiApp {
             let monitor_size = ui.ctx().input(|input| input.viewport().monitor_size);
             if let Some(monitor_size) = monitor_size {
                 let position = state.settings.position();
+                let indicator_size = state.settings.indicator_size();
+                let margin = state.settings.margin();
                 ui.ctx()
                     .send_viewport_cmd(egui::ViewportCommand::OuterPosition(indicator_position(
                         monitor_size,
                         position,
+                        indicator_size,
+                        margin,
                     )));
                 state.positioned = true;
                 ui.ctx().request_repaint();
@@ -203,36 +215,61 @@ impl eframe::App for EguiApp {
             state.shown = true;
         }
 
-        if active != state.previous_active {
-            ui.ctx()
-                .send_viewport_cmd(egui::ViewportCommand::MousePassthrough(!active));
-            state.previous_active = active;
-        }
-
-        let visibility = ui.ctx().animate_bool_with_time_and_easing(
+        let transition = ui.ctx().animate_value_with_time(
             egui::Id::new("indicator-visibility"),
-            active,
-            ANIMATION_DURATION,
-            egui::emath::easing::cubic_out,
+            if active { 1.0 } else { 0.0 },
+            if active {
+                SHOW_ANIMATION_DURATION
+            } else {
+                HIDE_ANIMATION_DURATION
+            },
         );
-        if visibility == 0.0 {
+        let (opacity, scale) = if active {
+            let progress = quintic_out(transition);
+            (progress, 0.92 + 0.08 * progress)
+        } else {
+            let progress = quintic_out(1.0 - transition);
+            (1.0 - progress, 1.0 - 0.04 * progress)
+        };
+        if opacity == 0.0 {
             return;
         }
 
         let label = state.label.clone();
         let icon = state.icon.clone();
         let shape = state.settings.indicator_shape();
+        let indicator_size = state.settings.indicator_size();
+        let content_changed_at = state.content_changed_at;
         drop(state);
 
         let available = ui.max_rect();
-        let scale = 0.9 + (0.1 * visibility);
-        let indicator_rect =
-            egui::Rect::from_center_size(available.center(), available.size() * scale);
-        let hovered = ui.rect_contains_pointer(indicator_rect);
-        let (background_alpha, text_alpha) = if hovered { (0.5, 1.0) } else { (0.4, 1.0) };
+        let indicator_rect = egui::Rect::from_center_size(
+            available.center(),
+            egui::Vec2::splat(indicator_size * scale),
+        );
+        let content_progress = content_changed_at.map_or(1.0, |changed_at| {
+            (changed_at.elapsed().as_secs_f32() / CONTENT_ANIMATION_DURATION.as_secs_f32()).min(1.0)
+        });
+        let content_progress = quintic_out(content_progress);
+        let (background_alpha, text_alpha) = (1.0, 1.0);
 
-        let background = egui::Rgba::from_black_alpha(background_alpha * visibility).into();
+        let background = egui::Rgba::from_black_alpha(background_alpha * opacity).into();
         match shape {
+            IndicatorShape::Circle => {
+                let radius = indicator_rect.width().min(indicator_rect.height()) / 2.0;
+                let shadow = egui::epaint::Shadow {
+                    offset: [0, 2],
+                    blur: 10,
+                    spread: 0,
+                    color: egui::Rgba::from_black_alpha(0.22 * opacity).into(),
+                };
+                ui.painter().add(shadow.as_shape(
+                    indicator_rect,
+                    egui::CornerRadius::same(radius.round() as u8),
+                ));
+                ui.painter()
+                    .circle_filled(indicator_rect.center(), radius, background);
+            }
             IndicatorShape::Squircle => paint_squircle(ui.painter(), indicator_rect, background),
             IndicatorShape::RoundedRectangle => {
                 ui.painter().rect_filled(
@@ -244,12 +281,17 @@ impl eframe::App for EguiApp {
         }
         match icon {
             Some(icon) => {
-                let icon_rect = indicator_rect.shrink(24.0 * scale);
+                let icon_rect = indicator_rect.shrink(indicator_size / 4.0 * scale);
+                let icon_rect = egui::Rect::from_center_size(
+                    icon_rect.center(),
+                    icon_rect.size() * content_progress,
+                );
                 if let Some(image) = crate::icons::image_source(&icon) {
                     ui.put(
                         icon_rect,
-                        egui::Image::new(image)
-                            .tint(egui::Rgba::from_white_alpha(text_alpha * visibility)),
+                        egui::Image::new(image).tint(egui::Rgba::from_white_alpha(
+                            text_alpha * opacity * content_progress,
+                        )),
                     );
                 }
             }
@@ -258,10 +300,16 @@ impl eframe::App for EguiApp {
                     indicator_rect.center(),
                     egui::Align2::CENTER_CENTER,
                     label,
-                    egui::FontId::proportional(44.0 * scale),
-                    egui::Rgba::from_white_alpha(text_alpha * visibility).into(),
+                    egui::FontId::proportional(44.0 * scale * content_progress),
+                    egui::Rgba::from_white_alpha(text_alpha * opacity * content_progress).into(),
                 );
             }
+        }
+
+        if content_changed_at
+            .is_some_and(|changed_at| changed_at.elapsed() < CONTENT_ANIMATION_DURATION)
+        {
+            ui.ctx().request_repaint_after(Duration::from_millis(16));
         }
     }
 
@@ -270,11 +318,24 @@ impl eframe::App for EguiApp {
     }
 }
 
-fn indicator_position(monitor_size: egui::Vec2, position: IndicatorPosition) -> egui::Pos2 {
-    let x = (monitor_size.x - INDICATOR_SIZE) / 2.0;
+fn quintic_out(t: f32) -> f32 {
+    1.0 - (1.0 - t).powi(5)
+}
+
+fn window_size(indicator_size: f32) -> f32 {
+    indicator_size + 2.0 * SHADOW_MARGIN
+}
+
+fn indicator_position(
+    monitor_size: egui::Vec2,
+    position: IndicatorPosition,
+    indicator_size: f32,
+    margin: f32,
+) -> egui::Pos2 {
+    let x = (monitor_size.x - window_size(indicator_size)) / 2.0;
     let y = match position {
-        IndicatorPosition::Top => TOP_MARGIN,
-        IndicatorPosition::Bottom => monitor_size.y - INDICATOR_SIZE - BOTTOM_MARGIN,
+        IndicatorPosition::Top => margin - SHADOW_MARGIN,
+        IndicatorPosition::Bottom => monitor_size.y - indicator_size - margin - SHADOW_MARGIN,
     };
     egui::pos2(x, y)
 }

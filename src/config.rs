@@ -15,6 +15,8 @@ use serde::{Deserialize, Serialize};
 
 const EDITABLE_LAYER_COUNT: u8 = 7;
 const CONFIG_RELOAD_DEBOUNCE: Duration = Duration::from_millis(150);
+const DEFAULT_INDICATOR_SIZE: u16 = 64;
+const DEFAULT_MARGIN: u16 = 120;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Settings {
@@ -22,6 +24,10 @@ pub struct Settings {
     indicator_shape: IndicatorShape,
     #[serde(default)]
     position: IndicatorPosition,
+    #[serde(default = "default_indicator_size")]
+    size: u16,
+    #[serde(default = "default_margin")]
+    margin: u16,
     #[serde(default = "default_layer_aliases")]
     layer_aliases: BTreeMap<u8, String>,
     #[serde(default)]
@@ -36,6 +42,8 @@ impl Default for Settings {
         Self {
             indicator_shape: IndicatorShape::default(),
             position: IndicatorPosition::default(),
+            size: default_indicator_size(),
+            margin: default_margin(),
             layer_aliases: default_layer_aliases(),
             layer_icons: BTreeMap::new(),
             #[cfg(target_os = "linux")]
@@ -83,6 +91,14 @@ impl Settings {
         self.position
     }
 
+    pub fn indicator_size(&self) -> f32 {
+        self.size.clamp(32, 128) as f32
+    }
+
+    pub fn margin(&self) -> f32 {
+        self.margin.min(300) as f32
+    }
+
     pub fn layer_icon(&self, layer: u8) -> Option<&str> {
         let icon = self.layer_icons.get(&layer)?.as_str();
         crate::icons::contains(icon).then_some(icon)
@@ -122,8 +138,9 @@ impl Settings {
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum IndicatorShape {
-    Squircle,
     #[default]
+    Circle,
+    Squircle,
     RoundedRectangle,
 }
 
@@ -133,6 +150,14 @@ pub enum IndicatorPosition {
     Top,
     #[default]
     Bottom,
+}
+
+const fn default_indicator_size() -> u16 {
+    DEFAULT_INDICATOR_SIZE
+}
+
+const fn default_margin() -> u16 {
+    DEFAULT_MARGIN
 }
 
 pub fn open_in_default_application() -> Result<(), Box<dyn Error>> {
