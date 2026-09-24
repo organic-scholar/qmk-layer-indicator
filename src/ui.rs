@@ -5,6 +5,7 @@ use std::{
 
 use crate::{
     config::{ConfigWatcher, IndicatorPosition, IndicatorShape, Settings},
+    daemon::LayerSocket,
     qmk::{ConsoleReader, QmkEvent},
     tray::{TrayCommand, TrayHandle},
 };
@@ -139,6 +140,9 @@ impl IndicatorState {
     // content so the fade-out animation still has something to render.
     fn sync_display(&mut self) {
         self.visible = false;
+        if self.settings.headless() {
+            return;
+        }
         if let Some(icon) = self.settings.layer_icon(self.active_layer) {
             self.icon = Some(icon.into());
             self.visible = true;
@@ -163,6 +167,7 @@ pub struct EguiApp {
     _console_reader: ConsoleReader,
     _tray_icon: Option<TrayHandle>,
     _config_watcher: Option<ConfigWatcher>,
+    _layer_socket: Option<LayerSocket>,
 }
 
 impl EguiApp {
@@ -171,12 +176,14 @@ impl EguiApp {
         console_reader: ConsoleReader,
         tray_icon: Option<TrayHandle>,
         config_watcher: Option<ConfigWatcher>,
+        layer_socket: Option<LayerSocket>,
     ) -> Self {
         Self {
             indicator,
             _console_reader: console_reader,
             _tray_icon: tray_icon,
             _config_watcher: config_watcher,
+            _layer_socket: layer_socket,
         }
     }
 }

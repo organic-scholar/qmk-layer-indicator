@@ -1,0 +1,63 @@
+{
+  "name": "qmk-layer-indicator",
+  "displayName": "QMK Layer Indicator",
+  "description": "Updates the VS Code cursor style from QMK layer events.",
+  "version": "0.1.0",
+  "publisher": "organic-scholar",
+  "license": "GPL-3.0-only",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./dist/extension.js",
+  "extensionKind": [
+    "ui"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "configuration": {
+      "title": "QMK Layer Indicator",
+      "properties": {
+        "qmkLayerIndicator.socketPath": {
+          "type": "string",
+          "default": "",
+          "description": "Unix socket path. Leave empty to use the daemon's default path."
+        },
+        "qmkLayerIndicator.layerCursorStyles": {
+          "type": "object",
+          "default": {
+            "0": "line",
+            "1": "block",
+            "2": "underline"
+          },
+          "description": "Maps QMK layer numbers to VS Code cursor styles.",
+          "additionalProperties": {
+            "type": "string",
+            "enum": [
+              "line",
+              "block",
+              "underline",
+              "line-thin",
+              "block-outline",
+              "underline-thin"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p .",
+    "watch": "tsc -watch -p .",
+    "vscode:prepublish": "npm run compile"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.0.0"
+  }
+}

@@ -21,6 +21,8 @@ const DEFAULT_MARGIN: u16 = 120;
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Settings {
     #[serde(default)]
+    headless: bool,
+    #[serde(default)]
     indicator_shape: IndicatorShape,
     #[serde(default)]
     position: IndicatorPosition,
@@ -40,6 +42,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            headless: false,
             indicator_shape: IndicatorShape::default(),
             position: IndicatorPosition::default(),
             size: default_indicator_size(),
@@ -81,6 +84,10 @@ impl Settings {
             .get(&layer)
             .filter(|alias| !alias.is_empty())
             .map(String::as_str)
+    }
+
+    pub fn headless(&self) -> bool {
+        self.headless
     }
 
     pub fn indicator_shape(&self) -> IndicatorShape {
