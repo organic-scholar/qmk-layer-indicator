@@ -1,0 +1,8 @@
+{
+  "uuid": "qmk-layer-indicator@organic-scholar",
+  "name": "QMK Layer Indicator",
+  "description": "Shows the current QMK layer in the top panel.",
+  "shell-version": ["45", "46", "47", "48", "49", "50"],
+  "url": "https://github.com/organic-scholar/qmk-layer-indicator",
+  "version": 1
+}
