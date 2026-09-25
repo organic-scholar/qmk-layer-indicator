@@ -22,10 +22,10 @@
     "configuration": {
       "title": "QMK Layer Indicator",
       "properties": {
-        "qmkLayerIndicator.socketPath": {
+        "qmkLayerIndicator.webSocketUrl": {
           "type": "string",
-          "default": "",
-          "description": "Unix socket path. Leave empty to use the daemon's default path."
+          "default": "ws://127.0.0.1:51837",
+          "description": "Local QMK Layer Indicator WebSocket URL."
         },
         "qmkLayerIndicator.layerCursorStyles": {
           "type": "object",
@@ -58,6 +58,10 @@
   "devDependencies": {
     "@types/node": "^20.0.0",
     "@types/vscode": "^1.85.0",
-    "typescript": "^5.0.0"
+    "typescript": "^5.0.0",
+    "@types/ws": "^8.5.13"
+  },
+  "dependencies": {
+    "ws": "^8.18.3"
   }
 }

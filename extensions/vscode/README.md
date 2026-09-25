@@ -21,14 +21,14 @@ cursor. Configure additional layers in VS Code settings:
 
 ## Setup
 
-Start the application normally. Its layer socket is always available:
+Start the application normally. Its layer WebSocket server is always available:
 
 ```sh
 qmk-layer-indicator
 ```
 
-To suppress only the indicator overlay while retaining the tray icon and layer
-socket, set this in the application's `config.toml` and restart it:
+To run only the QMK/WebSocket service, without the indicator overlay or tray icon,
+set this in the application's `config.toml` and restart it:
 
 ```toml
 headless = true
@@ -45,6 +45,5 @@ npm run compile
 Use VS Code's **Run Extension** launch configuration, or package the extension
 with `@vscode/vsce` and install the resulting `.vsix` file.
 
-The extension uses `$XDG_RUNTIME_DIR/qmk-layer-indicator.sock` when available,
-otherwise the system temporary directory. Set
-`qmkLayerIndicator.socketPath` if the daemon uses a custom path.
+The extension uses `ws://127.0.0.1:51837` by default. Set
+`qmkLayerIndicator.webSocketUrl` to use a different local server URL.

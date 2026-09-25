@@ -35,14 +35,14 @@ fn main() -> Result<(), Box<dyn Error>> {
                     None
                 }
             };
-            let layer_socket = match daemon::LayerSocket::start() {
-                Ok(socket) => Some(socket),
+            let layer_server = match daemon::LayerServer::start() {
+                Ok(server) => Some(server),
                 Err(error) => {
-                    eprintln!("Could not start layer socket: {error}");
+                    eprintln!("Could not start layer WebSocket server: {error}");
                     None
                 }
             };
-            let publisher = layer_socket.as_ref().map(daemon::LayerSocket::publisher);
+            let publisher = layer_server.as_ref().map(daemon::LayerServer::publisher);
             let console_reader = qmk::start_console_reader({
                 let indicator = indicator.clone();
                 move |event| {
@@ -65,7 +65,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 console_reader,
                 tray_icon,
                 config_watcher,
-                layer_socket,
+                layer_server,
             )))
         }),
     )?;

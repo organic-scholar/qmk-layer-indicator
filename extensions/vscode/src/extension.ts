@@ -1,11 +1,9 @@
-import * as net from "node:net";
-import * as os from "node:os";
-import * as path from "node:path";
 import * as vscode from "vscode";
+import WebSocket from "ws";
 
 const RECONNECT_DELAY_MS = 3_000;
 
-let connection: net.Socket | undefined;
+let connection: WebSocket | undefined;
 let reconnectTimer: NodeJS.Timeout | undefined;
 let received = "";
 let disposed = false;
@@ -26,7 +24,7 @@ export function activate(context: vscode.ExtensionContext): void {
   statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left);
   statusBarItem.name = "QMK Layer";
   statusBarItem.tooltip = "QMK keyboard layer";
-  statusBarItem.text = "$(keyboard) Layer —";
+  setConnectingStatus();
   statusBarItem.show();
   context.subscriptions.push(statusBarItem);
 
@@ -34,8 +32,8 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push({ dispose });
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((event) => {
-      if (event.affectsConfiguration("qmkLayerIndicator.socketPath")) {
-        connection?.destroy();
+      if (event.affectsConfiguration("qmkLayerIndicator.webSocketUrl")) {
+        connection?.terminate();
       }
       if (event.affectsConfiguration("qmkLayerIndicator.layerCursorStyles") && currentLayer) {
         updateCursorStyle(currentLayer);
@@ -52,19 +50,20 @@ function connect(): void {
     return;
   }
 
+  setConnectingStatus();
   received = "";
-  connection = net.createConnection(socketPath());
-  connection.setEncoding("utf8");
-  connection.on("data", handleData);
-  connection.on("error", () => connection?.destroy());
+  connection = new WebSocket(webSocketUrl());
+  connection.on("message", handleData);
+  connection.on("error", () => connection?.close());
   connection.on("close", () => {
     connection = undefined;
+    setConnectingStatus();
     scheduleReconnect();
   });
 }
 
-function handleData(data: string): void {
-  received += data;
+function handleData(data: WebSocket.RawData): void {
+  received += data.toString();
   const lines = received.split("\n");
   received = lines.pop() ?? "";
 
@@ -100,6 +99,15 @@ function updateStatusBar(layer: string): void {
   statusBarItem.tooltip = `QMK keyboard layer ${layer}`;
 }
 
+function setConnectingStatus(): void {
+  if (!statusBarItem) {
+    return;
+  }
+
+  statusBarItem.text = "$(keyboard) Layer ?";
+  statusBarItem.tooltip = "Waiting for QMK Layer Indicator";
+}
+
 function applyCursorStyle(): void {
   if (!currentCursorStyle) {
     return;
@@ -120,15 +128,10 @@ function scheduleReconnect(): void {
   }, RECONNECT_DELAY_MS);
 }
 
-function socketPath(): string {
-  const configuredPath = vscode.workspace
+function webSocketUrl(): string {
+  return vscode.workspace
     .getConfiguration("qmkLayerIndicator")
-    .get<string>("socketPath", "");
-  if (configuredPath) {
-    return configuredPath;
-  }
-
-  return path.join(process.env.XDG_RUNTIME_DIR || os.tmpdir(), "qmk-layer-indicator.sock");
+    .get<string>("webSocketUrl", "ws://127.0.0.1:51837");
 }
 
 export function deactivate(): void {
@@ -141,6 +144,6 @@ function dispose(): void {
     clearTimeout(reconnectTimer);
     reconnectTimer = undefined;
   }
-  connection?.destroy();
+  connection?.terminate();
   connection = undefined;
 }

@@ -1,4 +1,5 @@
 /target
+**/target/
 
 # Generated Arch package sources and build artifacts.
 /packaging/arch/*.tar.gz

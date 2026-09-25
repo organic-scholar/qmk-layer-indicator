@@ -1,6 +1,7 @@
 import Clutter from 'gi://Clutter';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
+import Soup from 'gi://Soup?version=3.0';
 import St from 'gi://St';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
@@ -8,16 +9,16 @@ import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 
 const RECONNECT_DELAY_MS = 3_000;
-const SOCKET_NAME = 'qmk-layer-indicator.sock';
+const DEFAULT_WEBSOCKET_URL = 'ws://127.0.0.1:51837';
 
-Gio._promisify(Gio.DataInputStream.prototype, 'read_line_async',
-    'read_line_finish_utf8');
-Gio._promisify(Gio.SocketClient.prototype, 'connect_async');
+Gio._promisify(Soup.Session.prototype, 'websocket_connect_async',
+    'websocket_connect_finish');
 
 export default class QmkLayerIndicatorExtension extends Extension {
     enable() {
         this._cancellable = new Gio.Cancellable();
-        this._connection = null;
+        this._websocket = null;
+        this._session = new Soup.Session();
         this._retrySource = 0;
 
         this._indicator = new PanelMenu.Button(0.0, 'QMK Layer Indicator');
@@ -28,7 +29,7 @@ export default class QmkLayerIndicatorExtension extends Extension {
             style: 'color: white;',
         });
         this._label = new St.Label({
-            text: '—',
+            text: '?',
             y_align: Clutter.ActorAlign.CENTER,
         });
         this._box.add_child(this._icon);
@@ -46,8 +47,9 @@ export default class QmkLayerIndicatorExtension extends Extension {
             GLib.Source.remove(this._retrySource);
             this._retrySource = 0;
         }
-        this._connection?.close(null);
-        this._connection = null;
+        this._websocket?.close(Soup.WebsocketCloseCode.NORMAL, null);
+        this._websocket = null;
+        this._session = null;
         this._indicator.destroy();
         this._indicator = null;
         this._box = null;
@@ -57,37 +59,28 @@ export default class QmkLayerIndicatorExtension extends Extension {
     }
 
     async _connect() {
+        this._setConnecting();
         try {
-            const client = new Gio.SocketClient();
-            const address = Gio.UnixSocketAddress.new(this._socketPath());
-            this._connection = await client.connect_async(address, this._cancellable);
-            const input = new Gio.DataInputStream({
-                base_stream: this._connection.get_input_stream(),
+            const request = Soup.Message.new('GET', this._webSocketUrl());
+            this._websocket = await this._session.websocket_connect_async(
+                request, null, null, GLib.PRIORITY_DEFAULT, this._cancellable);
+            this._websocket.connect('message', (_connection, _type, message) =>
+                this._handleMessage(message));
+            this._websocket.connect('closed', () => {
+                this._websocket = null;
+                if (!this._cancellable.is_cancelled())
+                    this._scheduleReconnect();
             });
-
-            while (!this._cancellable.is_cancelled()) {
-                const [line] = await input.read_line_async(
-                    GLib.PRIORITY_DEFAULT, this._cancellable);
-                if (line === null)
-                    break;
-                this._handleMessage(line);
-            }
         } catch (error) {
-            console.log(error)
-            if (!this._cancellable.is_cancelled())
-                console.debug(`QMK Layer Indicator socket unavailable: ${error.message}`);
-        } finally {
-            this._connection?.close(null);
-            this._connection = null;
-            if (!this._cancellable.is_cancelled())
+            if (!this._cancellable.is_cancelled()) {
+                console.debug(`QMK Layer Indicator WebSocket unavailable: ${error.message}`);
                 this._scheduleReconnect();
+            }
         }
     }
 
     _handleMessage(message) {
-        const text = typeof message === 'string'
-            ? message
-            : new TextDecoder().decode(message);
+        const text = new TextDecoder().decode(message.get_data());
         const match = /^LAYER:(\d+)$/.exec(text.trim());
         if (!match)
             return;
@@ -95,6 +88,11 @@ export default class QmkLayerIndicatorExtension extends Extension {
         const layer = match[1];
         this._label.text = layer;
         this._indicator.set_accessible_name(`QMK keyboard layer ${layer}`);
+    }
+
+    _setConnecting() {
+        this._label.text = '?';
+        this._indicator.set_accessible_name('Waiting for QMK Layer Indicator');
     }
 
     _scheduleReconnect() {
@@ -109,12 +107,8 @@ export default class QmkLayerIndicatorExtension extends Extension {
             });
     }
 
-    _socketPath() {
-        const configuredPath = GLib.getenv('QMK_LAYER_INDICATOR_SOCKET');
-        if (configuredPath)
-            return configuredPath;
-
-        const runtimeDirectory = GLib.getenv('XDG_RUNTIME_DIR') ?? GLib.get_tmp_dir();
-        return GLib.build_filenamev([runtimeDirectory, SOCKET_NAME]);
+    _webSocketUrl() {
+        return GLib.getenv('QMK_LAYER_INDICATOR_WEBSOCKET_URL')
+            ?? DEFAULT_WEBSOCKET_URL;
     }
 }

@@ -1,18 +1,16 @@
 use std::{
-    env, fs,
-    io::{self, ErrorKind, Write},
-    os::unix::{
-        fs::FileTypeExt,
-        net::{UnixListener, UnixStream},
-    },
-    path::{Path, PathBuf},
+    io::{self, ErrorKind},
+    net::{TcpListener, TcpStream},
     sync::mpsc::{self, Receiver, Sender},
     thread::{self, JoinHandle},
     time::Duration,
 };
 
-const SOCKET_NAME: &str = "qmk-layer-indicator.sock";
-const POLL_INTERVAL: Duration = Duration::from_millis(50);
+use tungstenite::{Message, WebSocket, accept};
+
+pub const DEFAULT_WEBSOCKET_PORT: u16 = 51_837;
+
+const POLL_INTERVAL: Duration = Duration::from_millis(100);
 
 #[derive(Clone)]
 pub struct LayerPublisher {
@@ -25,28 +23,24 @@ impl LayerPublisher {
     }
 }
 
-pub struct LayerSocket {
-    path: PathBuf,
+pub struct LayerServer {
     publisher: LayerPublisher,
     shutdown_sender: Sender<()>,
     thread: Option<JoinHandle<()>>,
 }
 
-impl LayerSocket {
+impl LayerServer {
     pub fn start() -> io::Result<Self> {
-        let path = socket_path();
-        remove_existing_socket(&path)?;
-        let listener = UnixListener::bind(&path)?;
+        let listener = TcpListener::bind(("127.0.0.1", DEFAULT_WEBSOCKET_PORT))?;
         listener.set_nonblocking(true)?;
 
         let (layer_sender, layer_receiver) = mpsc::channel();
         let (shutdown_sender, shutdown_receiver) = mpsc::channel();
         let thread = thread::Builder::new()
-            .name("layer-socket".into())
+            .name("layer-websocket".into())
             .spawn(move || run_server(listener, layer_receiver, shutdown_receiver))?;
 
         Ok(Self {
-            path,
             publisher: LayerPublisher {
                 sender: layer_sender,
             },
@@ -60,18 +54,17 @@ impl LayerSocket {
     }
 }
 
-impl Drop for LayerSocket {
+impl Drop for LayerServer {
     fn drop(&mut self) {
         let _ = self.shutdown_sender.send(());
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
         }
-        let _ = fs::remove_file(&self.path);
     }
 }
 
 fn run_server(
-    listener: UnixListener,
+    listener: TcpListener,
     layer_receiver: Receiver<u8>,
     shutdown_receiver: Receiver<()>,
 ) {
@@ -95,58 +88,30 @@ fn run_server(
     }
 }
 
-fn accept_clients(listener: &UnixListener, clients: &mut Vec<UnixStream>, current_layer: u8) {
+fn accept_clients(listener: &TcpListener, clients: &mut Vec<WebSocket<TcpStream>>, layer: u8) {
     loop {
         match listener.accept() {
-            Ok((mut stream, _)) => {
-                if stream.set_nonblocking(true).is_ok() && write_layer(&mut stream, current_layer) {
-                    clients.push(stream);
+            Ok((stream, _)) => match accept(stream) {
+                Ok(mut client) => {
+                    if write_layer(&mut client, layer) {
+                        clients.push(client);
+                    }
                 }
-            }
+                Err(error) => eprintln!("Layer WebSocket handshake error: {error}"),
+            },
             Err(error) if error.kind() == ErrorKind::WouldBlock => return,
             Err(error) => {
-                eprintln!("Layer socket accept error: {error}");
+                eprintln!("Layer WebSocket accept error: {error}");
                 return;
             }
         }
     }
 }
 
-fn broadcast_layer(clients: &mut Vec<UnixStream>, layer: u8) {
+fn broadcast_layer(clients: &mut Vec<WebSocket<TcpStream>>, layer: u8) {
     clients.retain_mut(|client| write_layer(client, layer));
 }
 
-fn write_layer(client: &mut UnixStream, layer: u8) -> bool {
-    let message = format!("LAYER:{layer}\n");
-    matches!(client.write(message.as_bytes()), Ok(length) if length == message.len())
-}
-
-fn socket_path() -> PathBuf {
-    if let Some(path) = env::var_os("QMK_LAYER_INDICATOR_SOCKET") {
-        return path.into();
-    }
-
-    env::var_os("XDG_RUNTIME_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(env::temp_dir)
-        .join(SOCKET_NAME)
-}
-
-fn remove_existing_socket(path: &Path) -> io::Result<()> {
-    match fs::symlink_metadata(path) {
-        Ok(metadata) if metadata.file_type().is_socket() => match UnixStream::connect(path) {
-            Ok(_) => Err(io::Error::new(
-                ErrorKind::AddrInUse,
-                format!("layer socket is already in use at {}", path.display()),
-            )),
-            Err(error) if error.kind() == ErrorKind::ConnectionRefused => fs::remove_file(path),
-            Err(error) => Err(error),
-        },
-        Ok(_) => Err(io::Error::new(
-            ErrorKind::AlreadyExists,
-            format!("refusing to replace non-socket path {}", path.display()),
-        )),
-        Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(error),
-    }
+fn write_layer(client: &mut WebSocket<TcpStream>, layer: u8) -> bool {
+    client.send(Message::text(format!("LAYER:{layer}"))).is_ok()
 }

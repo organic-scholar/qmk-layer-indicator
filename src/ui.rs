@@ -5,7 +5,7 @@ use std::{
 
 use crate::{
     config::{ConfigWatcher, IndicatorPosition, IndicatorShape, Settings},
-    daemon::LayerSocket,
+    daemon::LayerServer,
     qmk::{ConsoleReader, QmkEvent},
     tray::{TrayCommand, TrayHandle},
 };
@@ -167,7 +167,7 @@ pub struct EguiApp {
     _console_reader: ConsoleReader,
     _tray_icon: Option<TrayHandle>,
     _config_watcher: Option<ConfigWatcher>,
-    _layer_socket: Option<LayerSocket>,
+    _layer_server: Option<LayerServer>,
 }
 
 impl EguiApp {
@@ -176,14 +176,14 @@ impl EguiApp {
         console_reader: ConsoleReader,
         tray_icon: Option<TrayHandle>,
         config_watcher: Option<ConfigWatcher>,
-        layer_socket: Option<LayerSocket>,
+        layer_server: Option<LayerServer>,
     ) -> Self {
         Self {
             indicator,
             _console_reader: console_reader,
             _tray_icon: tray_icon,
             _config_watcher: config_watcher,
-            _layer_socket: layer_socket,
+            _layer_server: layer_server,
         }
     }
 }
