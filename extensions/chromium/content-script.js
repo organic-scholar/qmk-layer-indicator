@@ -20,15 +20,19 @@ chrome.runtime.sendMessage({ type: "qmk-layer-indicator:get-state" })
   .catch(() => {});
 
 function setCaretShape(layer) {
-  const shape = CARET_SHAPES[layer] ?? "bar";
-  let style = document.getElementById(STYLE_ID);
-  if (!style) {
-    style = document.createElement("style");
-    style.id = STYLE_ID;
-    (document.head || document.documentElement).append(style);
+  const shape = CARET_SHAPES[layer] || "bar";
+  let el = document.getElementById(STYLE_ID);
+  if (!el) {
+    el = document.createElement("style");
+    el.id = STYLE_ID;
+    el.dataset["shape"] = shape;
+    (document.head || document.documentElement).append(el);
   }
-
-  style.textContent = `
+  if ("shape" in el.dataset && el.dataset.shape === shape) {
+    return
+  }
+  el.dataset.shape = shape;
+  el.textContent = `
     input:not([type="button"]):not([type="checkbox"]):not([type="radio"]),
     textarea,
     [contenteditable="true"] {

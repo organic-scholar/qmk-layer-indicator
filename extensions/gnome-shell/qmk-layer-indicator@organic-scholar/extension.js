@@ -22,15 +22,19 @@ export default class QmkLayerIndicatorExtension extends Extension {
         this._retrySource = 0;
 
         this._indicator = new PanelMenu.Button(0.0, 'QMK Layer Indicator');
-        this._box = new St.BoxLayout({style_class: 'panel-status-menu-box'});
+        this._box = new St.BoxLayout({
+            style_class: 'panel-status-menu-box',
+            style: 'spacing: 0.25em;',
+        });
         this._icon = new St.Icon({
             gicon: new Gio.FileIcon({file: this.dir.get_child('icon.svg')}),
             style_class: 'system-status-icon',
-            style: 'color: white;',
+            style: 'color: white; padding: 0; margin: 0;',
         });
         this._label = new St.Label({
             text: '?',
             y_align: Clutter.ActorAlign.CENTER,
+            style: 'min-width: 1em; text-align: center;',
         });
         this._box.add_child(this._icon);
         this._box.add_child(this._label);
@@ -81,13 +85,19 @@ export default class QmkLayerIndicatorExtension extends Extension {
 
     _handleMessage(message) {
         const text = new TextDecoder().decode(message.get_data());
-        const match = /^LAYER:(\d+)$/.exec(text.trim());
-        if (!match)
+        let event;
+        try {
+            event = JSON.parse(text);
+        } catch {
+            return;
+        }
+        if (!Number.isInteger(event?.layer) || event.layer < 0 || typeof event.alias !== 'string')
             return;
 
-        const layer = match[1];
-        this._label.text = layer;
-        this._indicator.set_accessible_name(`QMK keyboard layer ${layer}`);
+        this._label.text = event.alias || String(event.layer);
+        this._indicator.set_accessible_name(event.alias
+            ? `QMK keyboard layer ${event.layer}: ${event.alias}`
+            : `QMK keyboard layer ${event.layer}`);
     }
 
     _setConnecting() {

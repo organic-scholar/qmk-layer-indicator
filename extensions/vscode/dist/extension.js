@@ -43,9 +43,9 @@ const ws_1 = __importDefault(require("ws"));
 const RECONNECT_DELAY_MS = 3_000;
 let connection;
 let reconnectTimer;
-let received = "";
 let disposed = false;
 let currentLayer;
+let currentAlias = "";
 let currentCursorStyle;
 let statusBarItem;
 const cursorStyles = {
@@ -70,7 +70,7 @@ function activate(context) {
             connection?.terminate();
         }
         if (event.affectsConfiguration("qmkLayerIndicator.layerCursorStyles") && currentLayer) {
-            updateCursorStyle(currentLayer);
+            updateCursorStyle(currentLayer, currentAlias);
         }
     }));
     context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(() => applyCursorStyle()));
@@ -80,7 +80,6 @@ function connect() {
         return;
     }
     setConnectingStatus();
-    received = "";
     connection = new ws_1.default(webSocketUrl());
     connection.on("message", handleData);
     connection.on("error", () => connection?.close());
@@ -91,19 +90,24 @@ function connect() {
     });
 }
 function handleData(data) {
-    received += data.toString();
-    const lines = received.split("\n");
-    received = lines.pop() ?? "";
-    for (const line of lines) {
-        const match = /^LAYER:(\d+)$/.exec(line.trim());
-        if (match) {
-            updateCursorStyle(match[1]);
+    try {
+        const message = JSON.parse(data.toString());
+        if (typeof message !== "object" || message === null) {
+            return;
+        }
+        const { layer, alias } = message;
+        if (Number.isInteger(layer) && typeof layer === "number" && layer >= 0 && typeof alias === "string") {
+            updateCursorStyle(String(layer), alias);
         }
     }
+    catch {
+        // Ignore malformed messages.
+    }
 }
-function updateCursorStyle(layer) {
+function updateCursorStyle(layer, alias) {
     currentLayer = layer;
-    updateStatusBar(layer);
+    currentAlias = alias;
+    updateStatusBar(layer, alias);
     const styles = vscode.workspace
         .getConfiguration("qmkLayerIndicator")
         .get("layerCursorStyles", {});
@@ -114,12 +118,14 @@ function updateCursorStyle(layer) {
     currentCursorStyle = style;
     applyCursorStyle();
 }
-function updateStatusBar(layer) {
+function updateStatusBar(layer, alias) {
     if (!statusBarItem) {
         return;
     }
-    statusBarItem.text = `$(keyboard) Layer ${layer}`;
-    statusBarItem.tooltip = `QMK keyboard layer ${layer}`;
+    statusBarItem.text = `$(keyboard) Layer ${alias || layer}`;
+    statusBarItem.tooltip = alias
+        ? `QMK keyboard layer ${layer}: ${alias}`
+        : `QMK keyboard layer ${layer}`;
 }
 function setConnectingStatus() {
     if (!statusBarItem) {

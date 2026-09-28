@@ -1,8 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=QMK Layer Indicator
-Comment=Shows the active QMK keyboard layer
-Exec=qmk-layer-indicator
-Icon=qmk-layer-indicator
-Terminal=false
-Categories=Utility;

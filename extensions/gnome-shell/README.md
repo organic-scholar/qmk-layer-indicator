@@ -1,8 +1,8 @@
 # QMK Layer Indicator GNOME Shell extension
 
-Shows the layer received from the QMK Layer Indicator WebSocket server as `L0`,
-`L1`, and so on in the GNOME top panel. It does not access the keyboard HID
-device itself.
+Shows the layer received from the QMK Layer Indicator WebSocket server in the
+GNOME top panel. A configured alias is shown in place of the numeric layer. It
+does not access the keyboard HID device itself.
 
 ## Install for development
 
@@ -35,3 +35,5 @@ unlink ~/.local/share/gnome-shell/extensions/qmk-layer-indicator@organic-scholar
 
 The extension uses `$QMK_LAYER_INDICATOR_WEBSOCKET_URL` when set; otherwise it
 connects to the application default of `ws://127.0.0.1:51837`.
+Events are JSON such as `{"layer":1,"alias":"S"}`; an unconfigured alias is
+an empty string.

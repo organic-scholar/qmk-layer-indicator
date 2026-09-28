@@ -1,0 +1,10 @@
+[Unit]
+Description=QMK Layer Indicator service
+
+[Service]
+ExecStart=%h/.local/bin/qmk-layer-indicator
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

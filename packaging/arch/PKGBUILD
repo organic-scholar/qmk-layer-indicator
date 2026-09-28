@@ -1,11 +1,11 @@
 pkgname=qmk-layer-indicator
 pkgver=0.1.0
 pkgrel=1
-pkgdesc='Always-on-top indicator for QMK keyboard layers'
+pkgdesc='QMK keyboard layer WebSocket service'
 arch=('x86_64')
 url='https://github.com/organic-scholar/qmk-layer-indicator'
 license=('GPL-3.0-only')
-depends=('gcc-libs' 'glibc' 'libglvnd' 'libx11' 'libxcursor' 'libxi' 'libxkbcommon' 'libxrandr' 'systemd-libs' 'wayland')
+depends=('gcc-libs' 'glibc' 'systemd-libs')
 makedepends=('cargo' 'pkgconf' 'systemd')
 source=("$pkgname-$pkgver.tar.gz")
 sha256sums=('SKIP')
@@ -20,10 +20,10 @@ package() {
 
     install -Dm755 target/release/qmk-layer-indicator \
         "$pkgdir/usr/bin/qmk-layer-indicator"
-    install -Dm644 packaging/arch/qmk-layer-indicator.desktop \
-        "$pkgdir/usr/share/applications/qmk-layer-indicator.desktop"
-    install -Dm644 assets/icon.png \
-        "$pkgdir/usr/share/icons/hicolor/256x256/apps/qmk-layer-indicator.png"
+    install -Dm644 packaging/linux/qmk-layer-indicator.service \
+        "$pkgdir/usr/lib/systemd/user/qmk-layer-indicator.service"
+    sed -i 's|%h/.local/bin/qmk-layer-indicator|/usr/bin/qmk-layer-indicator|' \
+        "$pkgdir/usr/lib/systemd/user/qmk-layer-indicator.service"
     install -Dm644 packaging/arch/70-qmk-layer-indicator.rules \
         "$pkgdir/usr/lib/udev/rules.d/70-qmk-layer-indicator.rules"
 }
