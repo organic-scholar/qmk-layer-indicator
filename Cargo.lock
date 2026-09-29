@@ -358,6 +358,7 @@ name = "qmk-layer-indicator"
 version = "0.1.0"
 dependencies = [
  "hidapi",
+ "libc",
  "notify",
  "serde",
  "serde_json",

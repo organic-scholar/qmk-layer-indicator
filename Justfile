@@ -174,6 +174,32 @@ install-vscode:
     cp -R "$source_dir/." "$destination/"
     echo "Copied VS Code extension to $destination. Reload VS Code to use it."
 
+# Install the shell cursor helper and print the bash or zsh source line.
+install-shell shell_name="auto":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    selected_shell="{{shell_name}}"
+    if [[ "$selected_shell" == "auto" ]]; then
+        selected_shell="${SHELL:-}"
+        selected_shell="${selected_shell##*/}"
+    fi
+    case "$selected_shell" in
+        bash|zsh) ;;
+        *) echo "Choose bash or zsh: just install-shell [bash|zsh]" >&2; exit 1 ;;
+    esac
+    cargo build --locked --release --bin qmk-layer-indicator-shell
+    bin_dir="$HOME/.local/bin"
+    mkdir -p "$bin_dir"
+    staged_binary="$(mktemp "$bin_dir/.qmk-layer-indicator-shell.XXXXXX")"
+    trap 'rm -f "$staged_binary"' EXIT
+    install -m 755 target/release/qmk-layer-indicator-shell "$staged_binary"
+    mv -f "$staged_binary" "$bin_dir/qmk-layer-indicator-shell"
+    hook_dir="$HOME/.local/share/qmk-layer-indicator/shell"
+    mkdir -p "$hook_dir"
+    install -m 644 "extensions/shell/qmk-layer-indicator.$selected_shell" "$hook_dir/qmk-layer-indicator.$selected_shell"
+    printf -v source_line 'source "$HOME/.local/share/qmk-layer-indicator/shell/qmk-layer-indicator.%s"' "$selected_shell"
+    printf 'Installed shell cursor integration for %s. Add this line to ~/.%src:\n%s\n' "$selected_shell" "$selected_shell" "$source_line"
+
 install-gnome:
     #!/usr/bin/env bash
     [[ "$(uname)" == "Linux" ]] || { echo 'This recipe must run on Linux.' >&2; exit 1; }
