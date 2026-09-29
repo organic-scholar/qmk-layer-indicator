@@ -2,6 +2,8 @@ set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 
 app_name := "QMK Layer Indicator"
 bundle_id := "com.organic-scholar.qmk-layer-indicator"
+menubar_app_name := "QMK Layer Indicator Menu Bar"
+menubar_bundle_id := "com.organic-scholar.qmk-layer-indicator.menubar"
 version := `sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n1`
 
 default:
@@ -58,6 +60,66 @@ macos-remove-login-agent:
     #!/usr/bin/env bash
     [[ "$(uname)" == "Darwin" ]] || { echo 'This recipe must run on macOS.' >&2; exit 1; }
     plist="$HOME/Library/LaunchAgents/{{bundle_id}}.plist"
+    launchctl bootout "gui/$(id -u)" "$plist" 2>/dev/null || true
+    rm -f "$plist"
+
+# Build the macOS menu bar app (.app bundle) that displays the current layer.
+macos-menubar-package:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    [[ "$(uname)" == "Darwin" ]] || { echo 'This recipe must run on macOS.' >&2; exit 1; }
+    app="packaging/macos/dist/{{menubar_app_name}}.app"
+    iconset="$(mktemp -d)/icon.iconset"
+    trap 'rm -rf "$(dirname "$iconset")"' EXIT
+    mkdir -p "$iconset"
+    (cd extensions/macos && swift build --configuration release)
+    binary="extensions/macos/.build/release/QmkLayerIndicatorMenuBar"
+    mkdir -p packaging/macos/dist
+    rm -rf "$app"
+    mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+    cp "$binary" "$app/Contents/MacOS/QmkLayerIndicatorMenuBar"
+    for size in 16 32 128 256 512; do
+        sips -z "$size" "$size" assets/icon.png --out "$iconset/icon_${size}x${size}.png"
+        double=$((size * 2))
+        sips -z "$double" "$double" assets/icon.png --out "$iconset/icon_${size}x${size}@2x.png"
+    done
+    iconutil -c icns "$iconset" -o "$app/Contents/Resources/QmkLayerIndicatorMenuBar.icns"
+    sed 's/@VERSION@/{{version}}/g' packaging/macos/menu-bar-Info.plist.in > "$app/Contents/Info.plist"
+    echo "Built $app"
+
+# Build and install the menu bar app for this user, then load its LaunchAgent.
+install-macos-menubar:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    [[ "$(uname)" == "Darwin" ]] || { echo 'This recipe must run on macOS.' >&2; exit 1; }
+    (cd extensions/macos && swift build --configuration release)
+    binary="extensions/macos/.build/release/QmkLayerIndicatorMenuBar"
+    app="$HOME/Applications/{{menubar_app_name}}.app"
+    iconset="$(mktemp -d)/icon.iconset"
+    trap 'rm -rf "$(dirname "$iconset")"' EXIT
+    mkdir -p "$iconset"
+    rm -rf "$app"
+    mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+    install -m 755 "$binary" "$app/Contents/MacOS/QmkLayerIndicatorMenuBar"
+    for size in 16 32 128 256 512; do
+        sips -z "$size" "$size" assets/icon.png --out "$iconset/icon_${size}x${size}.png"
+        double=$((size * 2))
+        sips -z "$double" "$double" assets/icon.png --out "$iconset/icon_${size}x${size}@2x.png"
+    done
+    iconutil -c icns "$iconset" -o "$app/Contents/Resources/QmkLayerIndicatorMenuBar.icns"
+    sed 's/@VERSION@/{{version}}/g' packaging/macos/menu-bar-Info.plist.in > "$app/Contents/Info.plist"
+    plist="$HOME/Library/LaunchAgents/{{menubar_bundle_id}}.plist"
+    mkdir -p "$(dirname "$plist")"
+    sed "s|@EXECUTABLE@|$app/Contents/MacOS/QmkLayerIndicatorMenuBar|g" packaging/macos/menu-bar-launch-agent.plist.in > "$plist"
+    plutil -lint "$plist"
+    launchctl bootout "gui/$(id -u)" "$plist" 2>/dev/null || true
+    launchctl bootstrap "gui/$(id -u)" "$plist"
+    echo "Installed $app and loaded its LaunchAgent."
+
+macos-menubar-remove-login-agent:
+    #!/usr/bin/env bash
+    [[ "$(uname)" == "Darwin" ]] || { echo 'This recipe must run on macOS.' >&2; exit 1; }
+    plist="$HOME/Library/LaunchAgents/{{menubar_bundle_id}}.plist"
     launchctl bootout "gui/$(id -u)" "$plist" 2>/dev/null || true
     rm -f "$plist"
 
